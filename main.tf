@@ -47,5 +47,5 @@ resource "aws_instance" "this" {
 
 # SSH Command
 output "command" {
-  value = "ssh -i ${local_file.private_key_pem.filename} ec2-user@${aws_instance.this.public_ip}"
+  value = "./ssh.sh '${local_file.private_key_pem.filename}' '${aws_instance.this.public_ip}'"
 }
