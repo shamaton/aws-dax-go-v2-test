@@ -9,10 +9,11 @@ resource "aws_vpc" "vpc" {
   }
 }
 
+# for EC2
 resource "aws_subnet" "ec2" {
-  vpc_id     = aws_vpc.vpc.id
-  cidr_block = var.ec2_cidr
-  availability_zone      = "us-east-1a"
+  vpc_id                  = aws_vpc.vpc.id
+  cidr_block              = var.ec2_cidr
+  availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
 
   tags = {
@@ -50,8 +51,8 @@ resource "aws_route_table_association" "ec2" {
 
 # Security Group
 resource "aws_security_group" "ec2" {
-  name        = "${var.tag_name}-ec2"
-  vpc_id      = aws_vpc.vpc.id
+  name   = "${var.tag_name}-ec2"
+  vpc_id = aws_vpc.vpc.id
 
   tags = {
     Name = var.tag_name
@@ -76,25 +77,16 @@ resource "aws_security_group_rule" "ec2-egress" {
   security_group_id = aws_security_group.ec2.id
 }
 
-
+# for DAX
 resource "aws_subnet" "dax" {
-  vpc_id     = aws_vpc.vpc.id
-  cidr_block = var.dax_cidr
+  vpc_id                 = aws_vpc.vpc.id
+  cidr_block             = var.dax_cidr
   availability_zone      = "us-east-1a"
 
   tags = {
     Name = var.tag_name
   }
 }
-
-#resource "aws_security_group" "dax" {
-#  name        = "${var.tag_name}-dax"
-#  vpc_id      = aws_vpc.vpc.id
-#
-#  tags = {
-#    Name = var.tag_name
-#  }
-#}
 
 resource "aws_security_group_rule" "dax-ingress" {
   type              = "ingress"
