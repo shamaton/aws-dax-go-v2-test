@@ -39,3 +39,6 @@ terraform.rc
 
 # Key Pair
 .key_pair/
+
+# Test Binary
+daxtest
