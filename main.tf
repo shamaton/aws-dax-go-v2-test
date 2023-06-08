@@ -48,5 +48,5 @@ resource "aws_instance" "ec2" {
 
 # SSH Command
 output "command" {
-  value = "./ssh.sh '${local_file.private_key_pem.filename}' '${aws_instance.ec2.public_ip}'"
+  value = "./test.sh '${local_file.private_key_pem.filename}' '${aws_instance.ec2.public_ip}' 'dax://${aws_dax_cluster.this.cluster_address}:${aws_dax_cluster.this.port}'"
 }

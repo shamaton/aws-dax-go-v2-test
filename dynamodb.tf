@@ -3,21 +3,21 @@ resource "aws_dynamodb_table" "this" {
   billing_mode   = "PROVISIONED"
   read_capacity  = 20
   write_capacity = 20
-  hash_key       = "UserId"
-  range_key      = "GameTitle"
+  hash_key       = "user_id"
+  range_key      = "game_title"
 
   attribute {
-    name = "UserId"
+    name = "user_id"
     type = "S"
   }
 
   attribute {
-    name = "GameTitle"
+    name = "game_title"
     type = "S"
   }
 
   attribute {
-    name = "TopScore"
+    name = "score"
     type = "N"
   }
 
@@ -28,12 +28,12 @@ resource "aws_dynamodb_table" "this" {
 
   global_secondary_index {
     name               = "GameTitleIndex"
-    hash_key           = "GameTitle"
-    range_key          = "TopScore"
+    hash_key           = "game_title"
+    range_key          = "score"
     write_capacity     = 10
     read_capacity      = 10
     projection_type    = "INCLUDE"
-    non_key_attributes = ["UserId"]
+    non_key_attributes = ["user_id"]
   }
 
   tags = {
