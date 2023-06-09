@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-dax-go/dax"
@@ -72,6 +73,19 @@ func main() {
 	}
 	fmt.Println("[dax] get user is", user)
 
+	user.Info["comment"] = fmt.Sprintf("update commend @ %d", time.Now().Unix())
+	user, err = daxCli.UpdateItem(ctx, *user)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] update user is", user)
+
+	user, err = daxCli.GetItem(ctx, "user-a", "gt-a")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] get user is", user)
+
 	// dynamo
 	_, err = dynamoCli.PutItem(ctx, id, title, int(time.Now().Unix()))
 	if err != nil {
@@ -111,7 +125,19 @@ func main() {
 	}
 	fmt.Println("[dax] batch get users is", users)
 
-	users, err = daxCli.Query(ctx, "gt-c")
+	users, err = dynamoCli.Query(ctx, "user-c")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dynamo] query users is", users)
+
+	users, err = dynamoCli.Scan(ctx, 1, 2)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dynamo] scan users is", users)
+
+	users, err = daxCli.Query(ctx, "user-c")
 	if err != nil {
 		panic(err)
 	}
@@ -134,6 +160,65 @@ func main() {
 		panic(err)
 	}
 	fmt.Println("[dax] get user is", user)
+
+	count, err := daxCli.Count(ctx, 1, 50)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] user count is", count)
+
+	_, exist, err := dynamoCli.PutItemIfExist(ctx, "user-a", "gt-a", 777)
+	if exist || err != nil {
+		panic(err)
+	}
+	fmt.Println("[dyanmo] put user is", user)
+
+	_, exist, err = daxCli.PutItemIfExist(ctx, "user-a", "gt-a", 777)
+	if exist || err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] put user is", user)
+
+	user, exist, err = daxCli.PutItemIfExist(ctx, "user-b", "gt-b", 777)
+	if !exist || err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] put user is", user)
+
+	user, err = daxCli.GetItem(ctx, "user-b", "gt-b")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] get user is", user)
+
+	count, err = daxCli.TransactWriteItems(ctx, []User{*user})
+	if err == nil || !strings.Contains(err.Error(), "ConditionalCheckFailed") {
+		panic(err)
+	}
+	fmt.Println("[dax] transact write item count is", count)
+
+	user, exist, err = daxCli.PutItemIfExist(ctx, "user-b", "gt-b", 100)
+	if !exist || err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] put user is", user)
+
+	user.Score = 888
+	count, err = daxCli.TransactWriteItems(ctx, []User{*user})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] transact write item count is", count)
+
+	users, _, err = daxCli.TransactGetItems(ctx, []User{
+		{UserId: "user-b", GameTitle: "gt-b"},
+		{UserId: "user-c", GameTitle: "gt-c"},
+		{UserId: "user-d", GameTitle: "gt-d"},
+	})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("[dax] transact get users is", users)
 
 }
 
@@ -223,6 +308,30 @@ func (c *client) PutItem(ctx context.Context, id, title string, score int, cb ..
 		return nil, fmt.Errorf("put item error: %v", err)
 	}
 	return user, nil
+}
+
+func (c *client) PutItemIfExist(ctx context.Context, id, title string, score int) (*User, bool, error) {
+	cb := func(input *dynamodb.PutItemInput) {
+		cond := expression.Name("user_id").AttributeExists()
+		exp, err := expression.NewBuilder().WithCondition(cond).Build()
+		if err != nil {
+			panic(err)
+		}
+		input.ConditionExpression = exp.Condition()
+		input.ExpressionAttributeNames = exp.Names()
+		input.ExpressionAttributeValues = exp.Values()
+	}
+
+	user, err := c.PutItem(ctx, id, title, score, cb)
+
+	var cond *types.ConditionalCheckFailedException
+	if err != nil {
+		if strings.Contains(err.Error(), cond.ErrorCode()) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return user, true, err
 }
 
 func (c *client) DeleteItem(ctx context.Context, id, title string, cb ...func(input *dynamodb.DeleteItemInput)) error {
@@ -433,4 +542,134 @@ func (c *client) Scan(ctx context.Context, startScore, endScore int, cb ...func(
 		log.Printf("Couldn't unmarshal query out. reason: %v\n", err)
 	}
 	return users, err
+}
+
+func (c *client) Count(ctx context.Context, startScore, endScore int, cb ...func(*dynamodb.ScanInput)) (int, error) {
+	filter := expression.Name("score").Between(expression.Value(startScore), expression.Value(endScore))
+	expr, err := expression.NewBuilder().WithFilter(filter).Build()
+	if err != nil {
+		return -1, fmt.Errorf("couldn't build expressions for scan. reason: %v", err)
+	}
+
+	in := &dynamodb.ScanInput{
+		TableName:                 &c.tableName,
+		Select:                    types.SelectCount,
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		FilterExpression:          expr.Filter(),
+	}
+	if len(cb) > 0 {
+		cb[0](in)
+	}
+
+	out, err := c.c.Scan(ctx, in)
+	if err != nil {
+		return -1, fmt.Errorf("couldn't scan for users released between %v and %v. reason: %v",
+			startScore, endScore, err)
+	}
+	return int(out.Count), err
+}
+
+func (c *client) TransactWriteItems(ctx context.Context, users []User) (int, error) {
+	var (
+		written   = 0
+		batchSize = 25 // DynamoDB allows a maximum batch size of 25 items.
+		start     = 0
+		end       = start + batchSize
+	)
+
+	for start < len(users) {
+		if end > len(users) {
+			end = len(users)
+		}
+
+		items := make([]types.TransactWriteItem, 0, len(users))
+		for _, user := range users[start:end] {
+
+			cond := expression.Equal(expression.Name("score"), expression.Value(100))
+			update := expression.Set(expression.Name("score"), expression.Value(user.Score))
+			expr, err := expression.NewBuilder().WithUpdate(update).WithCondition(cond).Build()
+			if err != nil {
+				return written, fmt.Errorf("couldn't build expression for transact write items. reason: %v", err)
+			}
+
+			item := types.TransactWriteItem{
+				Update: &types.Update{
+					ConditionExpression:       expr.Condition(),
+					TableName:                 &c.tableName,
+					Key:                       user.GetKey(),
+					ExpressionAttributeNames:  expr.Names(),
+					ExpressionAttributeValues: expr.Values(),
+					UpdateExpression:          expr.Update(),
+				}}
+			items = append(items, item)
+		}
+
+		in := &dynamodb.TransactWriteItemsInput{
+			TransactItems: items,
+		}
+		_, err := c.c.TransactWriteItems(ctx, in)
+		if err != nil {
+			return written, fmt.Errorf("couldn't get a batch of users to %v. reason: %v", c.tableName, err)
+		}
+
+		written += len(in.TransactItems)
+		start = end
+		end += batchSize
+	}
+
+	return written, nil
+}
+
+func (c *client) TransactGetItems(ctx context.Context, users []User) ([]User, int, error) {
+	var (
+		gotten    = 0
+		batchSize = 100 // DynamoDB allows a maximum batch size of 100 items.
+		start     = 0
+		end       = start + batchSize
+	)
+
+	results := make([]User, 0, len(users))
+	for start < len(users) {
+		if end > len(users) {
+			end = len(users)
+		}
+
+		items := make([]types.TransactGetItem, 0, len(users))
+		for _, user := range users[start:end] {
+			item := types.TransactGetItem{
+				Get: &types.Get{
+					TableName: &c.tableName,
+					Key:       user.GetKey(),
+				}}
+			items = append(items, item)
+		}
+
+		in := &dynamodb.TransactGetItemsInput{
+			TransactItems: items,
+		}
+		out, err := c.c.TransactGetItems(ctx, in)
+		if err != nil {
+			return nil, gotten, fmt.Errorf("couldn't get a batch of users to %v. reason: %v", c.tableName, err)
+		}
+
+		resp := make([]map[string]types.AttributeValue, 0, len(out.Responses))
+		for _, v := range out.Responses {
+			if v.Item != nil {
+				resp = append(resp, v.Item)
+			}
+		}
+
+		var gotUsers []User
+		if err = attributevalue.UnmarshalListOfMaps(resp, &gotUsers); err != nil {
+			return nil, gotten, fmt.Errorf("couldn't unmarshal query out. reason: %v", err)
+		}
+
+		gotten += len(gotUsers)
+		start = end
+		end += batchSize
+		results = append(results, gotUsers...)
+	}
+
+	return results, gotten, nil
 }
