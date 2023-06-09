@@ -52,59 +52,64 @@ func main() {
 	daxCli := daxClient()
 	dynamoCli := dynamoClient()
 
-	id := "user-a"
-	title := "gt-a"
-
+	// not found user
 	user, err := daxCli.GetItem(ctx, "user-a", "gt-a")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] get user is", user)
 
-	user, err = daxCli.PutItem(ctx, id, title, 100)
+	// put user data
+	user, err = daxCli.PutItem(ctx, "user-a", "gt-a", 100)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] put user is", user)
 
+	// get user data
 	user, err = daxCli.GetItem(ctx, "user-a", "gt-a")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] get user is", user)
 
-	user.Info["comment"] = fmt.Sprintf("update commend @ %d", time.Now().Unix())
+	// update user data
+	user.Info["comment"] = fmt.Sprintf("update comment @ %d", time.Now().Unix())
 	user, err = daxCli.UpdateItem(ctx, *user)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] update user is", user)
 
+	// check updated user data
 	user, err = daxCli.GetItem(ctx, "user-a", "gt-a")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] get user is", user)
 
-	// dynamo
-	_, err = dynamoCli.PutItem(ctx, id, title, int(time.Now().Unix()))
+	// put user by dynamo client
+	_, err = dynamoCli.PutItem(ctx, "user-a", "gt-a", int(time.Now().Unix()))
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dynamo] put user is", user)
 
+	// get user by dynamo client
 	user, err = dynamoCli.GetItem(ctx, "user-a", "gt-a")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dynamo] get user is", user)
 
+	// get user by dax (cached user data)
 	user, err = daxCli.GetItem(ctx, "user-a", "gt-a")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] get user is", user)
 
+	// batch write users
 	written, err := daxCli.BatchWriteItems(ctx, []User{
 		{UserId: "user-a", GameTitle: "gt-a", Score: 1, Info: map[string]interface{}{"rating": 1.1, "comment": "aaa"}},
 		{UserId: "user-b", GameTitle: "gt-b", Score: 2, Info: map[string]interface{}{"rating": 2.2, "comment": "bbb"}},
@@ -115,6 +120,7 @@ func main() {
 	}
 	fmt.Println("[dax] batch write users count is", written)
 
+	// batch get users
 	users, _, err := daxCli.BatchGetItems(ctx, []User{
 		{UserId: "user-b", GameTitle: "gt-b"},
 		{UserId: "user-c", GameTitle: "gt-c"},
@@ -125,84 +131,98 @@ func main() {
 	}
 	fmt.Println("[dax] batch get users is", users)
 
+	// query user by dynamo client
 	users, err = dynamoCli.Query(ctx, "user-c")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dynamo] query users is", users)
 
+	// scan user by dynamo client
 	users, err = dynamoCli.Scan(ctx, 1, 2)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dynamo] scan users is", users)
 
+	// query user by dax client
 	users, err = daxCli.Query(ctx, "user-c")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] query users is", users)
 
+	// scan user by dax client
 	users, err = daxCli.Scan(ctx, 1, 2)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] scan users is", users)
 
+	// delete user
 	err = daxCli.DeleteItem(ctx, "user-a", "gt-a")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] delete user")
 
+	// not found user by deleted
 	user, err = daxCli.GetItem(ctx, "user-a", "gt-a")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] get user is", user)
 
+	// count (scan type COUNT)
 	count, err := daxCli.Count(ctx, 1, 50)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] user count is", count)
 
+	// check conditional (no put) by dynamo client
 	_, exist, err := dynamoCli.PutItemIfExist(ctx, "user-a", "gt-a", 777)
 	if exist || err != nil {
 		panic(err)
 	}
 	fmt.Println("[dyanmo] put user is", user)
 
+	// check conditional (no put) by dax client
 	_, exist, err = daxCli.PutItemIfExist(ctx, "user-a", "gt-a", 777)
 	if exist || err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] put user is", user)
 
+	// check conditional (put ok) by dax client
 	user, exist, err = daxCli.PutItemIfExist(ctx, "user-b", "gt-b", 777)
 	if !exist || err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] put user is", user)
 
+	// get user (put with conditional)
 	user, err = daxCli.GetItem(ctx, "user-b", "gt-b")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] get user is", user)
 
+	// check transact write (error case)
 	count, err = daxCli.TransactWriteItems(ctx, []User{*user})
 	if err == nil || !strings.Contains(err.Error(), "ConditionalCheckFailed") {
 		panic(err)
 	}
 	fmt.Println("[dax] transact write item count is", count)
 
+	// prepare user data for transact write
 	user, exist, err = daxCli.PutItemIfExist(ctx, "user-b", "gt-b", 100)
 	if !exist || err != nil {
 		panic(err)
 	}
 	fmt.Println("[dax] put user is", user)
 
+	// check transact write (ok case)
 	user.Score = 888
 	count, err = daxCli.TransactWriteItems(ctx, []User{*user})
 	if err != nil {
@@ -210,6 +230,7 @@ func main() {
 	}
 	fmt.Println("[dax] transact write item count is", count)
 
+	// check transact get
 	users, _, err = daxCli.TransactGetItems(ctx, []User{
 		{UserId: "user-b", GameTitle: "gt-b"},
 		{UserId: "user-c", GameTitle: "gt-c"},
@@ -219,7 +240,6 @@ func main() {
 		panic(err)
 	}
 	fmt.Println("[dax] transact get users is", users)
-
 }
 
 type client struct {
